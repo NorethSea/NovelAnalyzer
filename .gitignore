@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+data/
+*.db
+*.db-journal
+.DS_Store
+Thumbs.db
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
