@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, Novel } from '../api'
 import { useToast } from '../components/Toast'
 import { useConfirm } from '../components/ConfirmDialog'
@@ -23,22 +23,39 @@ export default function Home() {
   const toast = useToast()
   const confirm = useConfirm()
   const selection = useListSelection()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [novels, setNovels] = useState<Novel[]>([])
   const [loading, setLoading] = useState(true)
   const [importingA, setImportingA] = useState(false)
   const [importingB, setImportingB] = useState(false)
-  const [page, setPage] = useState(1)
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sortBy, setSortBy] = useState<SortKey>('created')
-  const [sortDesc, setSortDesc] = useState(true)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') || '')
+  const search = searchParams.get('q') || ''
+  const page = Number(searchParams.get('p')) || 1
+  const statusFilter = (searchParams.get('status') as StatusFilter) || 'all'
+  const sortBy = (searchParams.get('sort') as SortKey) || 'created'
+  const sortDesc = searchParams.get('desc') !== '0'
+
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput), 200)
+    setSearchInput(searchParams.get('q') || '')
+  }, [searchParams])
+
+  useEffect(() => {
+    const currentQ = searchParams.get('q') || ''
+    if (searchInput === currentQ) return
+
+    const t = setTimeout(() => {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (searchInput) next.set('q', searchInput)
+        else next.delete('q')
+        next.delete('p')
+        return next
+      }, { replace: true })
+    }, 200)
     return () => clearTimeout(t)
   }, [searchInput])
 
@@ -92,8 +109,6 @@ export default function Home() {
     const slice = filteredNovels.slice((cp - 1) * PAGE_SIZE, cp * PAGE_SIZE)
     return { totalPages: tp, currentPage: cp, pagedNovels: slice }
   }, [filteredNovels, page])
-
-  useEffect(() => { setPage(1) }, [search, statusFilter, sortBy, sortDesc])
 
   const novelById = useMemo(() => {
     const m = new Map<number, Novel>()
@@ -260,12 +275,12 @@ export default function Home() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <StatusFilterTabs value={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                <StatusFilterTabs value={statusFilter} onChange={v => setSearchParams(prev => { const n = new URLSearchParams(prev); if (v !== 'all') n.set('status', v); else n.delete('status'); n.delete('p'); return n }, { replace: true })} counts={statusCounts} />
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-500 whitespace-nowrap">{filteredNovels.length} 本匹配</span>
                   <select
                     value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortKey)}
+                    onChange={e => setSearchParams(prev => { const n = new URLSearchParams(prev); const v = e.target.value as SortKey; if (v !== 'created') n.set('sort', v); else n.delete('sort'); n.delete('p'); return n }, { replace: true })}
                     aria-label="排序字段"
                     className="px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
@@ -274,7 +289,7 @@ export default function Home() {
                     <option value="size">文件大小</option>
                   </select>
                   <button
-                    onClick={() => setSortDesc(d => !d)}
+                    onClick={() => setSearchParams(prev => { const n = new URLSearchParams(prev); if (sortDesc) n.set('desc', '0'); else n.delete('desc'); n.delete('p'); return n }, { replace: true })}
                     aria-label={sortDesc ? '降序' : '升序'}
                     className="px-2 py-1 border border-gray-300 rounded-md hover:bg-gray-50"
                     title={sortDesc ? '降序' : '升序'}
@@ -373,7 +388,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+              <Pagination page={currentPage} totalPages={totalPages} onChange={n => setSearchParams(prev => { const np = new URLSearchParams(prev); if (n > 1) np.set('p', String(n)); else np.delete('p'); return np }, { replace: true })} />
             </>
           )}
         </>

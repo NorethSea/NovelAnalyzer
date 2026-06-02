@@ -78,6 +78,16 @@ export interface LLMConfig {
   created_at: string;
 }
 
+export interface TokenUsageRecord {
+  id: number;
+  model: string;
+  provider: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  created_at: string;
+}
+
 export interface NovelWithAnalysis extends Novel {
   analysis?: Analysis;
 }

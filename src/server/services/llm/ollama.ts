@@ -1,5 +1,6 @@
 import type { LLMProvider, LLMProviderConfig, ChatMessage } from './types.js';
 import { ANALYZE_SYSTEM_PROMPT } from './types.js';
+import { tokenUsageDb } from '../../db/index.js';
 
 export class OllamaProvider implements LLMProvider {
   private baseUrl: string;
@@ -33,6 +34,17 @@ export class OllamaProvider implements LLMProvider {
       }
 
       const data = await response.json();
+      const promptTokens = data.prompt_eval_count || 0;
+      const completionTokens = data.eval_count || 0;
+      if (promptTokens > 0 || completionTokens > 0) {
+        tokenUsageDb.record({
+          model: this.model,
+          provider: 'ollama',
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+        }).catch(err => console.error('[TokenUsage] 记录失败:', err));
+      }
       return data.message?.content || '';
     } catch (error: any) {
       if (error.name === 'AbortError') {

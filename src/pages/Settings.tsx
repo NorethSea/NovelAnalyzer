@@ -15,12 +15,13 @@ interface Preset {
   created_at: string
 }
 
-type Tab = 'llm' | 'prompt' | 'folders'
+type Tab = 'llm' | 'prompt' | 'folders' | 'tokens'
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'llm', label: 'LLM 配置', icon: '🤖' },
   { key: 'prompt', label: 'Prompt 配置', icon: '✍️' },
   { key: 'folders', label: '文件夹', icon: '📁' },
+  { key: 'tokens', label: 'Token 统计', icon: '📊' },
 ]
 
 interface FormState {
@@ -145,6 +146,17 @@ export default function Settings() {
   const [defaultPrompts, setDefaultPrompts] = useState<DefaultPrompts | null>(null)
   const [showPrompts, setShowPrompts] = useState({ analyze: true, merge: false, recommend: false })
 
+  const [tokenStats, setTokenStats] = useState<{
+    total_calls: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    total_tokens: number;
+    by_model: { model: string; calls: number; total_tokens: number }[];
+    by_provider: { provider: string; calls: number; total_tokens: number }[];
+  } | null>(null)
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const [tokenClearing, setTokenClearing] = useState(false)
+
   useEffect(() => {
     let cancelled = false
     Promise.all([api.config.get(), api.config.getDefaults()])
@@ -163,6 +175,37 @@ export default function Settings() {
     return () => { cancelled = true }
   }, [toast])
 
+  useEffect(() => {
+    if (tab !== 'tokens') return
+    let cancelled = false
+    setTokenLoading(true)
+    api.config.getTokenUsage()
+      .then(data => { if (!cancelled) setTokenStats(data) })
+      .catch(err => { if (!cancelled) toast.error(err instanceof Error ? err.message : '加载 Token 统计失败') })
+      .finally(() => { if (!cancelled) setTokenLoading(false) })
+    return () => { cancelled = true }
+  }, [tab, toast])
+
+  async function handleClearTokenUsage() {
+    const ok = await confirm({
+      title: '清空 Token 记录',
+      message: '确定要清空所有 Token 消耗记录吗？此操作不可恢复。',
+      variant: 'danger',
+      confirmText: '清空',
+    })
+    if (!ok) return
+    setTokenClearing(true)
+    try {
+      await api.config.clearTokenUsage()
+      setTokenStats(null)
+      toast.success('Token 记录已清空')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '清空失败')
+    } finally {
+      setTokenClearing(false)
+    }
+  }
+
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     dispatch({ type: 'set', key, value })
   }
@@ -170,7 +213,23 @@ export default function Settings() {
   async function handleSavePreset() {
     if (!presetName.trim()) return
     try {
-      await api.config.savePreset(presetName.trim())
+      await api.config.savePreset(presetName.trim(), {
+        provider: form.provider,
+        api_key: form.apiKey || undefined,
+        base_url: form.baseUrl || undefined,
+        model: form.model,
+        chunk_size: Number(form.chunkSize),
+        overlap_ratio: Number(form.overlapRatio),
+        rpm_limit: Number(form.rpmLimit),
+        timeout: Number(form.timeoutSec),
+        max_tokens: form.maxTokens ? Number(form.maxTokens) : null,
+        prompt_analyze: form.promptAnalyze || undefined,
+        prompt_merge: form.promptMerge || undefined,
+        prompt_recommend: form.promptRecommend || undefined,
+        folder_a: stringifyFolderPaths(form.folderA),
+        folder_b: stringifyFolderPaths(form.folderB),
+        auto_scan: form.autoScan ? 1 : 0,
+      })
       setPresetName('')
       const data = await api.config.getPresets()
       setPresets(data)
@@ -536,8 +595,99 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      {tab === 'tokens' && (
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold">Token 消耗统计</h3>
+            <Button variant="danger" size="sm" onClick={handleClearTokenUsage} loading={tokenClearing} disabled={!tokenStats}>
+              清空记录
+            </Button>
+          </div>
+
+          {tokenLoading ? (
+            <div className="text-center py-8 text-gray-400 text-sm">加载中…</div>
+          ) : !tokenStats || tokenStats.total_calls === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">暂无 Token 消耗记录。执行小说分析后会自动记录。</div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <StatCard label="总请求数" value={String(tokenStats.total_calls)} />
+                <StatCard label="Prompt Tokens" value={formatNumber(tokenStats.total_prompt_tokens)} />
+                <StatCard label="Completion Tokens" value={formatNumber(tokenStats.total_completion_tokens)} />
+                <StatCard label="总 Tokens" value={formatNumber(tokenStats.total_tokens)} />
+              </div>
+
+              {tokenStats.by_model.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">按模型统计</h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 pr-4 font-medium text-gray-500">模型</th>
+                          <th className="text-right py-2 pr-4 font-medium text-gray-500">请求数</th>
+                          <th className="text-right py-2 font-medium text-gray-500">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tokenStats.by_model.map(m => (
+                          <tr key={m.model} className="border-b border-gray-100">
+                            <td className="py-2 pr-4 text-gray-900">{m.model}</td>
+                            <td className="py-2 pr-4 text-right text-gray-600">{m.calls}</td>
+                            <td className="py-2 text-right text-gray-600">{formatNumber(m.total_tokens)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {tokenStats.by_provider.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">按提供商统计</h4>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-2 pr-4 font-medium text-gray-500">提供商</th>
+                          <th className="text-right py-2 pr-4 font-medium text-gray-500">请求数</th>
+                          <th className="text-right py-2 font-medium text-gray-500">Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tokenStats.by_provider.map(p => (
+                          <tr key={p.provider} className="border-b border-gray-100">
+                            <td className="py-2 pr-4 text-gray-900">{p.provider}</td>
+                            <td className="py-2 pr-4 text-right text-gray-600">{p.calls}</td>
+                            <td className="py-2 text-right text-gray-600">{formatNumber(p.total_tokens)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-gray-50 rounded-lg p-4 text-center">
+      <div className="text-2xl font-bold text-indigo-600">{value}</div>
+      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    </div>
+  )
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('zh-CN')
 }
 
 function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {

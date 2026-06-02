@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, Preference } from '../api'
 import { useToast } from '../components/Toast'
 import { useConfirm } from '../components/ConfirmDialog'
@@ -20,17 +20,34 @@ export default function Preferences() {
   const toast = useToast()
   const confirm = useConfirm()
   const selection = useListSelection()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [preferences, setPreferences] = useState<Preference[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [page, setPage] = useState(1)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') || '')
+  const search = searchParams.get('q') || ''
+  const page = Number(searchParams.get('p')) || 1
+  const statusFilter = (searchParams.get('status') as StatusFilter) || 'all'
+
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput), 200)
+    setSearchInput(searchParams.get('q') || '')
+  }, [searchParams])
+
+  useEffect(() => {
+    const currentQ = searchParams.get('q') || ''
+    if (searchInput === currentQ) return
+
+    const t = setTimeout(() => {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (searchInput) next.set('q', searchInput)
+        else next.delete('q')
+        next.delete('p')
+        return next
+      }, { replace: true })
+    }, 200)
     return () => clearTimeout(t)
   }, [searchInput])
 
@@ -122,8 +139,6 @@ export default function Preferences() {
     return { totalPages: tp, currentPage: cp, pagedPreferences: filteredPreferences.slice((cp - 1) * PAGE_SIZE, cp * PAGE_SIZE) }
   }, [filteredPreferences, page])
 
-  useEffect(() => { setPage(1) }, [search, statusFilter])
-
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
       all: preferences.length, pending: 0, completed: 0, analyzing: 0, error: 0,
@@ -188,7 +203,7 @@ export default function Preferences() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <StatusFilterTabs value={statusFilter} onChange={setStatusFilter} counts={statusCounts} />
+                <StatusFilterTabs value={statusFilter} onChange={v => setSearchParams(prev => { const n = new URLSearchParams(prev); if (v !== 'all') n.set('status', v); else n.delete('status'); n.delete('p'); return n }, { replace: true })} counts={statusCounts} />
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -246,7 +261,7 @@ export default function Preferences() {
                 ))}
               </div>
 
-              <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+              <Pagination page={currentPage} totalPages={totalPages} onChange={n => setSearchParams(prev => { const np = new URLSearchParams(prev); if (n > 1) np.set('p', String(n)); else np.delete('p'); return np }, { replace: true })} />
             </>
           )}
         </>

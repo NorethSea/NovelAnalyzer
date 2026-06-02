@@ -1,5 +1,6 @@
 import type { LLMProvider, LLMProviderConfig, ChatMessage } from './types.js';
 import { ANALYZE_SYSTEM_PROMPT } from './types.js';
+import { tokenUsageDb } from '../../db/index.js';
 
 export class OpenAIProvider implements LLMProvider {
   private apiKey: string;
@@ -62,6 +63,16 @@ export class OpenAIProvider implements LLMProvider {
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(`LLM API 无内容返回`);
+    }
+
+    if (data.usage) {
+      tokenUsageDb.record({
+        model: this.model,
+        provider: 'openai',
+        prompt_tokens: data.usage.prompt_tokens || 0,
+        completion_tokens: data.usage.completion_tokens || 0,
+        total_tokens: data.usage.total_tokens || 0,
+      }).catch(err => console.error('[TokenUsage] 记录失败:', err));
     }
 
     return content;

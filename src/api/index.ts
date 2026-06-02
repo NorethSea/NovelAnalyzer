@@ -182,9 +182,9 @@ export const api = {
     }),
     test: () => request<{ success: boolean; message?: string; error?: string }>('/config/test', { method: 'POST', timeoutMs: 120_000 }),
     getPresets: () => request<{ id: number; name: string; is_active: number; provider: string; model: string; created_at: string }[]>('/config/presets'),
-    savePreset: (name: string) => request<{ id: number; name: string }>('/config/presets', {
+    savePreset: (name: string, config?: Record<string, unknown>) => request<{ id: number; name: string }>('/config/presets', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...config }),
     }),
     renamePreset: (id: number, name: string) => request(`/config/presets/${id}`, {
       method: 'PUT',
@@ -192,6 +192,15 @@ export const api = {
     }),
     activatePreset: (id: number) => request<LLMConfig>(`/config/presets/${id}/activate`, { method: 'PUT' }),
     deletePreset: (id: number) => request(`/config/presets/${id}`, { method: 'DELETE' }),
+    getTokenUsage: () => request<{
+      total_calls: number;
+      total_prompt_tokens: number;
+      total_completion_tokens: number;
+      total_tokens: number;
+      by_model: { model: string; calls: number; total_tokens: number }[];
+      by_provider: { provider: string; calls: number; total_tokens: number }[];
+    }>('/config/token-usage'),
+    clearTokenUsage: () => request<{ success: boolean }>('/config/token-usage', { method: 'DELETE' }),
   },
   folders: {
     resolve: (name: string) => {

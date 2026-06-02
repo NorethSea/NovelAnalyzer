@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { llmConfigDb } from '../db/index.js';
+import { llmConfigDb, tokenUsageDb } from '../db/index.js';
 import { getLLMProvider, resetProvider } from '../services/llm/index.js';
 import { asyncHandler, HttpError } from '../utils/asyncHandler.js';
 import { validateLLMConfigUpdate } from '../utils/validator.js';
@@ -75,9 +75,32 @@ router.get('/presets', asyncHandler(async (_req, res) => {
 }));
 
 router.post('/presets', asyncHandler(async (req, res) => {
-  const { name } = req.body || {};
+  const { name, ...configData } = req.body || {};
   if (!name?.trim()) throw new HttpError(400, '请输入方案名称');
   if (typeof name !== 'string' || name.length > 200) throw new HttpError(400, '方案名称过长');
+
+  if (configData.provider) {
+    const preset = await llmConfigDb.create({
+      name: name.trim(),
+      provider: configData.provider,
+      api_key: configData.api_key || undefined,
+      base_url: configData.base_url || undefined,
+      model: configData.model,
+      chunk_size: configData.chunk_size,
+      overlap_ratio: configData.overlap_ratio,
+      rpm_limit: configData.rpm_limit,
+      timeout: configData.timeout,
+      max_tokens: configData.max_tokens || undefined,
+      prompt_analyze: configData.prompt_analyze || undefined,
+      prompt_merge: configData.prompt_merge || undefined,
+      prompt_recommend: configData.prompt_recommend || undefined,
+      folder_a: configData.folder_a || undefined,
+      folder_b: configData.folder_b || undefined,
+      auto_scan: configData.auto_scan,
+    });
+    res.json(preset);
+    return
+  }
 
   const active = await llmConfigDb.getActive();
   if (!active) throw new HttpError(400, '当前没有可保存的配置');
@@ -129,6 +152,16 @@ router.delete('/presets/:id', asyncHandler(async (req, res) => {
   const active = await llmConfigDb.getActive();
   if (active && active.id === id) throw new HttpError(400, '不能删除当前正在使用的方案');
   await llmConfigDb.delete(id);
+  res.json({ success: true });
+}));
+
+router.get('/token-usage', asyncHandler(async (_req, res) => {
+  const stats = await tokenUsageDb.getStats();
+  res.json(stats);
+}));
+
+router.delete('/token-usage', asyncHandler(async (_req, res) => {
+  await tokenUsageDb.clear();
   res.json({ success: true });
 }));
 

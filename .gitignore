@@ -6,6 +6,7 @@ data/
 *.db-journal
 .DS_Store
 Thumbs.db
+.vite/
 
 # TypeScript incremental build cache
 *.tsbuildinfo

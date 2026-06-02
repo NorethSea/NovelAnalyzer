@@ -1,6 +1,6 @@
 import { getDb, saveDb, closeDb, flushDb, runInTransaction } from './schema.js';
 export { closeDb, flushDb, runInTransaction };
-import type { Novel, Analysis, ChunkAnalysis, Preference, Recommendation, LLMConfig, NovelWithAnalysis } from '../types/index.js';
+import type { Novel, Analysis, ChunkAnalysis, Preference, Recommendation, LLMConfig, NovelWithAnalysis, TokenUsageRecord } from '../types/index.js';
 
 type SqlParam = string | number | null;
 
@@ -548,6 +548,48 @@ export const llmConfigDb = {
     }
     return config;
   }
+};
+
+export const tokenUsageDb = {
+  async record(data: {
+    model: string;
+    provider: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  }): Promise<void> {
+    await runSql(
+      `INSERT INTO token_usage (model, provider, prompt_tokens, completion_tokens, total_tokens)
+       VALUES (?, ?, ?, ?, ?)`,
+      [data.model, data.provider, data.prompt_tokens, data.completion_tokens, data.total_tokens]
+    );
+    persistDb();
+  },
+
+  async getStats(): Promise<{
+    total_calls: number;
+    total_prompt_tokens: number;
+    total_completion_tokens: number;
+    total_tokens: number;
+    by_model: { model: string; calls: number; total_tokens: number }[];
+    by_provider: { provider: string; calls: number; total_tokens: number }[];
+  }> {
+    const totals = await queryOne<any>('SELECT COUNT(*) as total_calls, COALESCE(SUM(prompt_tokens),0) as total_prompt_tokens, COALESCE(SUM(completion_tokens),0) as total_completion_tokens, COALESCE(SUM(total_tokens),0) as total_tokens FROM token_usage') || {
+      total_calls: 0, total_prompt_tokens: 0, total_completion_tokens: 0, total_tokens: 0,
+    };
+    const byModelRows = await queryAll<any>('SELECT model, COUNT(*) as calls, COALESCE(SUM(total_tokens),0) as total_tokens FROM token_usage GROUP BY model ORDER BY total_tokens DESC');
+    const byProviderRows = await queryAll<any>('SELECT provider, COUNT(*) as calls, COALESCE(SUM(total_tokens),0) as total_tokens FROM token_usage GROUP BY provider ORDER BY total_tokens DESC');
+    return {
+      ...totals,
+      by_model: byModelRows,
+      by_provider: byProviderRows,
+    };
+  },
+
+  async clear(): Promise<void> {
+    await runSql('DELETE FROM token_usage');
+    persistDb();
+  },
 };
 
 // Batch job persistence

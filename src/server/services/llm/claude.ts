@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { LLMProvider, LLMProviderConfig, ChatMessage } from './types.js';
 import { ANALYZE_SYSTEM_PROMPT } from './types.js';
+import { tokenUsageDb } from '../../db/index.js';
 
 export class ClaudeProvider implements LLMProvider {
   private client: Anthropic;
@@ -35,6 +36,17 @@ export class ClaudeProvider implements LLMProvider {
       });
 
       const textBlock = response.content.find(b => b.type === 'text');
+      if (response.usage) {
+        const inputTokens = response.usage.input_tokens || 0;
+        const outputTokens = response.usage.output_tokens || 0;
+        tokenUsageDb.record({
+          model: this.model,
+          provider: 'claude',
+          prompt_tokens: inputTokens,
+          completion_tokens: outputTokens,
+          total_tokens: inputTokens + outputTokens,
+        }).catch(err => console.error('[TokenUsage] 记录失败:', err));
+      }
       return textBlock?.text || '';
     } catch (err: any) {
       if (err?.name === 'APITimeoutError' || err?.status === 408) {
